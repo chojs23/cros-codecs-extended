@@ -1,10 +1,19 @@
-# Cros-codecs
+# Cros-codecs Extended
 
-[<img alt="crates.io" src="https://img.shields.io/crates/v/cros-codecs">](https://crates.io/crates/cros-codecs)
-[<img alt="docs.rs" src="https://img.shields.io/docsrs/cros-codecs">](https://docs.rs/cros-codecs/latest/cros_codecs/)
+[<img alt="crates.io" src="https://img.shields.io/crates/v/cros-codecs-extended">](https://crates.io/crates/cros-codecs-extended)
+[<img alt="docs.rs" src="https://img.shields.io/docsrs/cros-codecs-extended">](https://docs.rs/cros-codecs-extended/latest/cros_codecs_extended/)
 
 A lightweight, simple, low-dependency, and hopefully safe crate for
 hardware-accelerated video decoding and encoding on Linux.
+
+## Fork provenance
+
+The `cros-codecs-extended` package is published from Discord's
+`discord-0.0.5` fork of `cros-codecs`. It keeps Discord's VA-API packed
+header and native surface changes for consumers that cannot use a Git
+dependency. Its VA-API feature uses the matching `cros-libva-extended`
+package. The original ChromiumOS and Discord copyright and license notices are
+preserved.
 
 It is developed for use in ChromeOS (particularly
 [crosvm](https://github.com/google/crosvm)), but has no dependency to ChromeOS
