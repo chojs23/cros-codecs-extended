@@ -939,6 +939,10 @@ where
             self.add_to_ready_queue(pic, handle);
         }
 
+        // A stream that declares how far pictures may be reordered lets us output the
+        // current picture without waiting for the DPB to fill up.
+        self.ready_queue.extend(self.codec.dpb.bump_reorder_excess().into_iter().flatten());
+
         Ok(())
     }
 

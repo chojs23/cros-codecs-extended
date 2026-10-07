@@ -485,6 +485,34 @@ impl<T: Clone> Dpb<T> {
         }
     }
 
+    fn num_needed_for_output(&self) -> usize {
+        self.entries.iter().filter(|entry| entry.needed_for_output).count()
+    }
+
+    /// Outputs pictures while more of them wait for output than the stream allows to follow a
+    /// picture in output order (`max_num_reorder_frames`, E.2.1).
+    ///
+    /// C.4.5.3 only bumps when the DPB has no empty frame buffer, so a stream that keeps many
+    /// reference frames (`max_dec_frame_buffering`) delays every picture by that many frames even
+    /// when it declares that it never reorders. Pictures output here stay in the DPB for as long
+    /// as they are used for reference. Streams without a bitstream restriction infer
+    /// `max_num_reorder_frames` from the DPB size, so their output is unchanged.
+    pub fn bump_reorder_excess(&mut self) -> Vec<Option<T>> {
+        let mut pics = vec![];
+        if self.interlaced {
+            return pics;
+        }
+        while self.num_needed_for_output() > self.max_num_reorder_frames {
+            match self.bump() {
+                Some(pic) => pics.push(pic),
+                None => break,
+            }
+            self.remove_unused();
+        }
+
+        pics
+    }
+
     /// Bumps the DPB if needed. DPB bumping is described on C.4.5.3.
     pub fn bump_as_needed(&mut self, current_pic: &PictureData) -> Vec<Option<T>> {
         let mut pics = vec![];
@@ -1239,5 +1267,74 @@ impl<T> std::fmt::Debug for Dpb<T> {
             .field("max_num_pics", &self.max_num_pics)
             .field("interlaced", &self.interlaced)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reference_frame(pic_order_cnt: i32) -> PictureData {
+        let mut pic = PictureData::default();
+        pic.pic_order_cnt = pic_order_cnt;
+        pic.set_reference(Reference::ShortTerm, false);
+        pic
+    }
+
+    /// Decodes `count` reference frames in output order and returns, for each one, the handles
+    /// the DPB released once that frame was stored.
+    fn decode_in_order(dpb: &mut Dpb<i32>, count: i32) -> Vec<Vec<i32>> {
+        (0..count)
+            .map(|index| {
+                let pic = reference_frame(index * 2);
+                let mut ready: Vec<i32> = dpb.bump_as_needed(&pic).into_iter().flatten().collect();
+                dpb.store_picture(pic.into_rc(), Some(index)).unwrap();
+                ready.extend(dpb.bump_reorder_excess().into_iter().flatten());
+                ready
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_stream_without_reordering_outputs_each_frame_as_it_is_stored() {
+        let mut dpb = Dpb::default();
+        dpb.set_limits(15, 0);
+
+        let ready = decode_in_order(&mut dpb, 4);
+
+        assert_eq!(ready, [vec![0], vec![1], vec![2], vec![3]]);
+        // Output frames remain available for reference.
+        assert_eq!(dpb.num_ref_frames(), 4);
+    }
+
+    #[test]
+    fn the_reorder_limit_holds_back_that_many_frames() {
+        let mut dpb = Dpb::default();
+        dpb.set_limits(15, 1);
+
+        let ready = decode_in_order(&mut dpb, 4);
+
+        assert_eq!(ready, [vec![], vec![0], vec![1], vec![2]]);
+    }
+
+    #[test]
+    fn an_inferred_reorder_limit_keeps_waiting_for_a_full_dpb() {
+        // Without a bitstream restriction, max_num_reorder_frames is inferred to be the DPB size.
+        let mut dpb = Dpb::default();
+        dpb.set_limits(4, 4);
+
+        let ready = decode_in_order(&mut dpb, 4);
+
+        assert!(ready.iter().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn interlaced_streams_keep_the_existing_bumping() {
+        let mut dpb = Dpb::<i32>::default();
+        dpb.set_limits(15, 0);
+        dpb.set_interlaced(true);
+        dpb.store_picture(reference_frame(0).into_rc(), Some(0)).unwrap();
+
+        assert!(dpb.bump_reorder_excess().is_empty());
     }
 }
